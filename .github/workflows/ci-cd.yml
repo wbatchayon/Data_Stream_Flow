@@ -35,8 +35,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -46,7 +44,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install flake8==8.0.0 black==26.1.0 isort==5.13.2 bandit
+          pip install flake8==8.0.0 bandit || pip install --break-system-packages flake8==8.0.0 bandit
 
       - name: Run Flake8 (errors only)
         run: |
@@ -91,11 +89,12 @@ jobs:
         with:
           base: ${{ github.event.repository.default_branch }}
           head: HEAD
-          extra_args: --only-verified || true
+          extra_args: --only-verified
+        continue-on-error: true
 
       - name: Dependency safety check
         run: |
-          pip install safety
+          pip install safety || pip install --break-system-packages safety
           safety check --json > safety-report.json || true
           safety check || true
 
