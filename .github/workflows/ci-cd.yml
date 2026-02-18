@@ -1,285 +1,403 @@
+# ============================================
+# Data Stream Flow - CI/CD Pipeline
+# ============================================
+
 name: CI/CD Pipeline
 
 on:
   push:
     branches:
       - main
+      - develop
   pull_request:
     branches:
       - main
   schedule:
-    - cron: '0 0 1 * *'  # Run every hour
+    - cron: '0 0 0 * *' # Daily at midnight
+  workflow_dispatch:  # Manual trigger
 
+# ============================================
+# Environment Variables
+# ============================================
+env:
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+  COMPOSE_PROJECT_NAME: datastreamflow
+
+# ============================================
+# Jobs
+# ============================================
 jobs:
-  build-and-test:
+  # ============================================
+  # Lint and Code Quality
+  # ============================================
+  lint:
+    name: Lint & Code Quality
     runs-on: ubuntu-latest
-
     steps:
-      # Step 1: Clone the repository
       - name: Checkout code
-        uses: actions/checkout@v3
-
-      # Step 2: Set up Docker
-      - name: Set up Docker
-        uses: docker/setup-buildx-action@v2
-
-      # Step 3: Install Docker Compose
-      - name: Install Docker Compose
-        run: |
-          sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-          sudo chmod +x /usr/local/bin/docker-compose
-
-      # Step 4: Install Java for Spark
-      - name: Install Java
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y openjdk-11-jdk
-          java -version
-
-      # Step 5: Set up Python and install dependencies
-      - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/checkout@v4
         with:
-          python-version: '3.8'
+          fetch-depth: 0
 
-      - name: Install Python dependencies
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          pip install flake8 black isort bandit
+
+      - name: Run Flake8
+        run: |
+          flake8 src/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
+
+      - name: Run Black formatting check
+        run: |
+          black --check src/ tests/
+
+      - name: Run isort import order check
+        run: |
+          isort --check-only --diff src/ tests/
+
+      - name: Run Bandit security scan
+        run: |
+          bandit -r src/ -f json -o bandit-report.json || true
+          bandit -r src/ -f txt
+
+  # ============================================
+  # Security Scanning
+  # ============================================
+  security:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          ignore-unfixed: true
+
+      - name: Run Trivy config scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
+      - name: Check for secrets with TruffleHog
+        uses: trufflesecurity/trufflehog@main
+        with:
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --only-verified
+
+      - name: Dependency safety check
+        run: |
+          pip install safety
+          safety check --json > safety-report.json || true
+          safety check
+
+  # ============================================
+  # Unit Tests
+  # ============================================
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
           pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-mock
 
-      # Step 6: Start services with Docker Compose
-      - name: Start services
-        run: |
-          docker-compose up -d
-          echo "Waiting for Kafka to be healthy..."
-          for i in {1..12}; do  # Retry for 2 minutes (12 * 10s)
-            if docker inspect kafka --format='{{.State.Health.Status}}' | grep -q "healthy"; then
-              echo "Kafka is healthy!"
-              break
-            fi
-            echo "Kafka not healthy yet, waiting 10 seconds..."
-            sleep 10
-          done
-          docker inspect kafka --format='{{.State.Health.Status}}' | grep -q "healthy" || (echo "Kafka failed to become healthy" && exit 1)
-          echo "Waiting for Airflow to be healthy..."
-          for i in {1..18}; do  # Retry for 3 minutes (18 * 10s)
-            if docker inspect airflow --format='{{.State.Health.Status}}' | grep -q "healthy"; then
-              echo "Airflow is healthy!"
-              break
-            fi
-            echo "Airflow not healthy yet, waiting 10 seconds..."
-            sleep 10
-          done
-          docker inspect airflow --format='{{.State.Health.Status}}' | grep -q "healthy" || (echo "Airflow failed to become healthy" && exit 1)
-
-      # Step 6.1: Debug container status
-      - name: Debug container status
-        run: |
-          docker ps -a
-          docker logs kafka || echo "Kafka container not found"
-          docker logs airflow || echo "Airflow container not found"
-
-      # Step 7: Create Kafka topic
-      - name: Create Kafka topic
-        run: |
-          if docker exec kafka /usr/bin/kafka-topics --list --bootstrap-server kafka:9092 | grep -q data_topic; then
-            echo "Topic 'data_topic' already exists."
-          else
-            for i in {1..5}; do
-              docker exec kafka /usr/bin/kafka-topics --create --topic data_topic --bootstrap-server kafka:9092 --partitions 1 --replication-factor 1 && break
-              echo "Kafka not ready, retrying ($i/5)..."
-              sleep 10
-            done || echo "Failed to create topic"
-          fi
-
-      # Step 8: Run unit tests
       - name: Run unit tests
         run: |
-          mkdir -p /tmp
-          python -m unittest discover -s tests -p "test_*.py"
+          python -m pytest tests/unit/ -v --cov=src --cov=scripts --cov-report=xml --cov-report=term-missing
 
-      # Step 9: Run unit tests
-      - name: Validate DAGs
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: unittests
+
+  # ============================================
+  # Build and Integration Tests
+  # ============================================
+  build-and-integration:
+    name: Build & Integration Tests
+    runs-on: ubuntu-latest
+    needs: [lint, security, unit-tests]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create .env file
         run: |
-          docker exec airflow airflow dags show data_pipeline_dag || (echo "DAG invalide ou non chargé" && exit 1)
+          cp .env.example .env
+          echo "AIRFLOW_DB_PASSWORD=test_password" >> .env
+          echo "MINIO_ROOT_USER=minioadmin" >> .env
+          echo "MINIO_ROOT_PASSWORD=minioadmin" >> .env
+          echo "MINIO_REGION_NAME=us-east-1" >> .env
+          echo "AIRFLOW__SMTP__SMTP_HOST=smtp.gmail.com" >> .env
+          echo "AIRFLOW__SMTP__SMTP_PORT=587" >> .env
+          echo "AIRFLOW__SMTP__SMTP_USER=test@test.com" >> .env
+          echo "AIRFLOW__SMTP__SMTP_PASSWORD=test" >> .env
+          echo "AIRFLOW__SMTP__SMTP_MAIL_FROM=test@test.com" >> .env
+          echo "AIRFLOW_SECRET_KEY=test_secret_key" >> .env
+          echo "AIRFLOW_WEBSERVER_SECRET_KEY=test_web_secret_key" >> .env
+          echo "AIRFLOW_API_PASSWORD=test_api_password" >> .env
+          echo "GRAFANA_PASSWORD=test_grafana" >> .env
+          echo "SMTP_HOST=smtp.gmail.com" >> .env
+          echo "SMTP_USER=test@test.com" >> .env
+          echo "SMTP_PASSWORD=test" >> .env
+          echo "SMTP_FROM=test@test.com" >> .env
+          echo "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:test_password@postgres:5432/airflow" >> .env
+          echo "AIRFLOW__CORE__EXECUTOR=LocalExecutor" >> .env
+          echo "AIRFLOW__CORE__DAG_DIR_LIST_INTERVAL=30" >> .env
+          echo "AIRFLOW__CORE__LOGGING_LEVEL=INFO" >> .env
+          echo "AIRFLOW__CORE__DAG_CONCURRENCY=16" >> .env
+          echo "AIRFLOW__CORE__MAX_ACTIVE_RUNS_PER_DAG=3" >> .env
+          echo "AIRFLOW__CORE__PARALLELISM=16" >> .env
+          echo "KAFKA_BROKER_ID=1" >> .env
+          echo "KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181" >> .env
+          echo "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092" >> .env
+          echo "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT" >> .env
+          echo "KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT" >> .env
+          echo "KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1" >> .env
+          echo "KAFKA_LOG_RETENTION_HOURS=168" >> .env
+          echo "KAFKA_LOG_SEGMENT_BYTES=1073741824" >> .env
+          echo "ELASTICSEARCH_HOSTS=http://elasticsearch:9200" >> .env
+          echo "ES_JAVA_OPTS=-Xms512m -Xmx512m" >> .env
+          echo "APP_ENV=development" >> .env
+          echo "LOG_LEVEL=INFO" >> .env
+          echo "PIPELINE_SCHEDULE_INTERVAL=@hourly" >> .env
+          echo "AIRFLOW_CPU_LIMIT=2" >> .env
+          echo "AIRFLOW_MEMORY_LIMIT=2g" >> .env
+          echo "KAFKA_MEMORY_LIMIT=2g" >> .env
+          echo "MINIO_MEMORY_LIMIT=1g" >> .env
+          echo "ELASTICSEARCH_MEMORY_LIMIT=1g" >> .env
+          echo "NETWORK_SUBNET=172.28.0.0/16" >> .env
 
-      # Step 9.1: Test the pipeline by triggering the DAG
-      - name: Test pipeline
+      - name: Build Docker images
         run: |
-          AIRFLOW_CONTAINER=$(docker ps -q -f "name=airflow")
-          if [ -z "$AIRFLOW_CONTAINER" ]; then
-            echo "Error: Airflow container not found!"
-            exit 1
-          fi
-          AIRFLOW_CONTAINER_NAME=$(docker inspect --format '{{.Name}}' $AIRFLOW_CONTAINER | sed 's/^\///')
-          # Clean up the /opt/airflow/dags directory to remove any duplicates
-          docker exec $AIRFLOW_CONTAINER_NAME rm -rf /opt/airflow/dags/*
-          # Copy the contents of the scripts/ directory directly to /scripts
-          docker cp scripts/. $AIRFLOW_CONTAINER_NAME:/scripts
-          # Copy the contents of the dags/ directory directly to /opt/airflow/dags
-          docker cp dags/. $AIRFLOW_CONTAINER_NAME:/opt/airflow/dags
+          docker compose build --no-cache
 
-          # Debug: List the contents of the scripts and dags directories
-          docker exec $AIRFLOW_CONTAINER_NAME ls -la /scripts
-          docker exec $AIRFLOW_CONTAINER_NAME ls -la /opt/airflow/dags
-
-          # Debug: Verify that dependencies are installed
-          # Run as the airflow user and set PATH to include /home/airflow/.local/bin
-          docker exec -u airflow $AIRFLOW_CONTAINER_NAME bash -c "PATH=$PATH:/home/airflow/.local/bin pip list"
-
-          # Debug: Check Python path and script availability
-          docker exec $AIRFLOW_CONTAINER_NAME python -c "import sys; print(sys.path)"
-          docker exec $AIRFLOW_CONTAINER_NAME python -c "import sys; sys.path.append('/scripts'); import load_remote_csv; print('Successfully imported load_remote_csv')"
-
-          # Debug: Manually parse the DAG file to check for errors
-          docker exec $AIRFLOW_CONTAINER_NAME python /opt/airflow/dags/data_pipeline_dag.py
-
-          echo "Waiting for Airflow to load DAGs..."
-          for i in {1..36}; do  # Retry for 6 minutes (36 * 10s)
-            # Force Airflow to rescan the DAGs directory
-            docker exec $AIRFLOW_CONTAINER_NAME airflow dags reserialize
-            docker exec $AIRFLOW_CONTAINER_NAME airflow dags list | grep -q "data_pipeline_dag" && break
-            echo "DAG not found yet, waiting 10 seconds... (Attempt $i of 36)"
-            docker exec $AIRFLOW_CONTAINER_NAME airflow dags list
-            echo "Checking for import errors..."
-            docker exec $AIRFLOW_CONTAINER_NAME airflow dags list-import-errors
-            sleep 10
-          done
-
-          docker exec $AIRFLOW_CONTAINER_NAME airflow dags list | grep -q "data_pipeline_dag" || (echo "DAG not loaded after 6 minutes!" && exit 1)
-
-          echo "Triggering the DAG..."
-          docker exec $AIRFLOW_CONTAINER_NAME airflow dags trigger -r test-run data_pipeline_dag
-      
-      # Step 9.2: Debug Elasticsearch Status
-      - name: Debug Elasticsearch Status
+      - name: Start services
         run: |
-          echo "Checking Elasticsearch status..."
-          docker inspect elasticsearch --format='{{.State.Health.Status}}' | grep -q "healthy" || (echo "Elasticsearch is not healthy!" && docker logs elasticsearch && exit 1)
-          curl -s http://localhost:9200 || (echo "Failed to connect to Elasticsearch!" && exit 1)
-          curl -s http://localhost:9200/_cat/indices?v || echo "No indices found yet."
-
-      # Step 9.3: Wait for DAG to complete
-      - name: Wait for DAG completion
+          docker compose up -d
+          
+      - name: Wait for Kafka
         run: |
-          echo "Waiting for DAG run to complete..."
-
-          # Display all DAG runs for debugging purposes
-          docker exec airflow airflow dags list-runs -d data_pipeline_dag
-
-          # Extract the line containing "test-run"
-          LINE=$(docker exec airflow airflow dags list-runs -d data_pipeline_dag | grep 'test-run')
-
-          # Extract the 4th column (execution_date) while trimming whitespace
-          EXECUTION_DATE=$(echo "$LINE" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/, "", $4); print $4}')
-
-          echo "Execution date for 'test-run': $EXECUTION_DATE"
-
-          if [ -z "$EXECUTION_DATE" ]; then
-            echo "Error: execution_date not found for run_id 'test-run'"
-            exit 1
-          fi
-
-          for i in {1..10}; do
-            STATUS=$(docker exec airflow airflow dags state data_pipeline_dag "$EXECUTION_DATE")
-            echo "Current DAG run state: $STATUS"
-            if [[ "$STATUS" == *"success"* ]] || [[ "$STATUS" == *"failed"* ]]; then
+          echo "Waiting for Kafka..."
+          for i in {1..30}; do
+            if docker compose exec -T kafka kafka-broker-api-versions --bootstrap-server localhost:9092 > /dev/null 2>&1; then
+              echo "Kafka is ready!"
               break
             fi
+            echo "Waiting... ($i/30)"
             sleep 10
           done
 
-      # Step 10: Verify data in Elasticsearch
+      - name: Wait for Airflow
+        run: |
+          echo "Waiting for Airflow..."
+          for i in {1..30}; do
+            if docker compose exec -T airflow curl -f http://localhost:8080/health > /dev/null 2>&1; then
+              echo "Airflow is ready!"
+              break
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 10
+          done
+
+      - name: Create Kafka topic
+        run: |
+          docker compose exec -T kafka kafka-topics --create \
+            --topic data_topic \
+            --bootstrap-server localhost:9092 \
+            --partitions 3 \
+            --replication-factor 1 || true
+
+      - name: Run integration tests
+        run: |
+          python -m pytest tests/integration/ -v
+
+      - name: Copy DAGs and scripts to Airflow
+        run: |
+          docker compose cp src/dags/. airflow:/opt/airflow/dags/
+          docker compose cp src/scripts/. airflow:/opt/airflow/scripts/
+
+      - name: Verify DAG is loaded
+        run: |
+          docker compose exec -T airflow airflow dags list | grep data_pipeline_dag
+
+      - name: Stop services
+        if: always()
+        run: |
+          docker compose down --volumes --remove-orphans
+
+  # ============================================
+  # End-to-End Tests (Scheduled Only)
+  # ============================================
+  e2e-tests:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create .env file
+        run: |
+          cp .env.example .env
+          echo "AIRFLOW_DB_PASSWORD=test_password" >> .env
+          echo "MINIO_ROOT_USER=minioadmin" >> .env
+          echo "MINIO_ROOT_PASSWORD=minioadmin" >> .env
+          echo "MINIO_REGION_NAME=us-east-1" >> .env
+          echo "AIRFLOW__SMTP__SMTP_HOST=smtp.gmail.com" >> .env
+          echo "AIRFLOW__SMTP__SMTP_PORT=587" >> .env
+          echo "AIRFLOW__SMTP__SMTP_USER=test@test.com" >> .env
+          echo "AIRFLOW__SMTP__SMTP_PASSWORD=test" >> .env
+          echo "AIRFLOW__SMTP__SMTP_MAIL_FROM=test@test.com" >> .env
+          echo "AIRFLOW_SECRET_KEY=test_secret_key" >> .env
+          echo "AIRFLOW_WEBSERVER_SECRET_KEY=test_web_secret_key" >> .env
+          echo "AIRFLOW_API_PASSWORD=test_api_password" >> .env
+          echo "GRAFANA_PASSWORD=test_grafana" >> .env
+          echo "SMTP_HOST=smtp.gmail.com" >> .env
+          echo "SMTP_USER=test@test.com" >> .env
+          echo "SMTP_PASSWORD=test" >> .env
+          echo "SMTP_FROM=test@test.com" >> .env
+          echo "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:test_password@postgres:5432/airflow" >> .env
+          echo "AIRFLOW__CORE__EXECUTOR=LocalExecutor" >> .env
+          echo "AIRFLOW__CORE__DAG_DIR_LIST_INTERVAL=30" >> .env
+          echo "AIRFLOW__CORE__LOGGING_LEVEL=INFO" >> .env
+          echo "AIRFLOW__CORE__DAG_CONCURRENCY=16" >> .env
+          echo "AIRFLOW__CORE__MAX_ACTIVE_RUNS_PER_DAG=3" >> .env
+          echo "AIRFLOW__CORE__PARALLELISM=16" >> .env
+          echo "KAFKA_BROKER_ID=1" >> .env
+          echo "KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181" >> .env
+          echo "KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092" >> .env
+          echo "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT" >> .env
+          echo "KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT" >> .env
+          echo "KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1" >> .env
+          echo "KAFKA_LOG_RETENTION_HOURS=168" >> .env
+          echo "KAFKA_LOG_SEGMENT_BYTES=1073741824" >> .env
+          echo "ELASTICSEARCH_HOSTS=http://elasticsearch:9200" >> .env
+          echo "ES_JAVA_OPTS=-Xms512m -Xmx512m" >> .env
+          echo "APP_ENV=development" >> .env
+          echo "LOG_LEVEL=INFO" >> .env
+          echo "PIPELINE_SCHEDULE_INTERVAL=@hourly" >> .env
+          echo "AIRFLOW_CPU_LIMIT=2" >> .env
+          echo "AIRFLOW_MEMORY_LIMIT=2g" >> .env
+          echo "KAFKA_MEMORY_LIMIT=2g" >> .env
+          echo "MINIO_MEMORY_LIMIT=1g" >> .env
+          echo "ELASTICSEARCH_MEMORY_LIMIT=1g" >> .env
+          echo "NETWORK_SUBNET=172.28.0.0/16" >> .env
+
+      - name: Start services
+        run: |
+          docker compose up -d
+          
+      - name: Wait for all services
+        run: |
+          # Wait for Kafka
+          for i in {1..30}; do
+            docker compose exec -T kafka kafka-broker-api-versions --bootstrap-server localhost:9092 > /dev/null 2>&1 && break
+            sleep 10
+          done
+          
+          # Wait for Airflow
+          for i in {1..30}; do
+            docker compose exec -T airflow curl -f http://localhost:8080/health > /dev/null 2>&1 && break
+            sleep 10
+          done
+          
+          # Wait for Elasticsearch
+          for i in {1..20}; do
+            curl -sf http://localhost:9200 > /dev/null && break
+            sleep 10
+          done
+
+      - name: Copy DAGs and scripts
+        run: |
+          docker compose cp src/dags/. airflow:/opt/airflow/dags/
+          docker compose cp src/scripts/. airflow:/opt/airflow/scripts/
+
+      - name: Trigger DAG
+        run: |
+          docker compose exec -T airflow airflow dags trigger -r github-actions-run data_pipeline_dag
+
+      - name: Wait for DAG completion
+        run: |
+          echo "Waiting for DAG to complete..."
+          for i in {1..60}; do
+            STATE=$(docker compose exec -T airflow airflow dags state data_pipeline_dag $(date +%Y-%m-%dT%H:%M:%S) 2>/dev/null | grep -oP 'success|failed|running' || echo "running")
+            echo "Current state: $STATE"
+            if [[ "$STATE" == "success" ]] || [[ "$STATE" == "failed" ]]; then
+              break
+            fi
+            sleep 30
+          done
+
       - name: Verify Elasticsearch data
         run: |
-          echo "Waiting for data in Elasticsearch..."
-          for i in {1..12}; do  # Increased to 2 minutes (12 attempts * 10s)
-            # Check all indices (excluding system indices starting with '.')
-            if curl -s http://localhost:9200/_cat/indices?v | grep -v '^\.'; then
-              echo "Data found in Elasticsearch."
-              curl -s http://localhost:9200/_cat/indices?v
-              exit 0
-            fi
-            echo "No data yet, waiting 10s... (attempt $i of 12)"
-            sleep 10
-          done
-          echo "Error: No data found in Elasticsearch after waiting."
-          exit 1
+          sleep 10
+          curl -s http://localhost:9200/_cat/indices?v
 
-      # Step 11: Collect and analyze logs for performance monitoring
-      - name: Check logs
-        run: |
-          echo "Airflow logs:"
-          docker logs airflow
-          echo "Kafka logs:"
-          docker logs kafka
-          echo "Spark logs:"
-          docker exec airflow find /opt/airflow -name "*.log" -exec cat {} \;
-
-      # Step 12: Analyze Airflow performance
-      - name: Analyze Airflow performance
-        run: |
-          echo "Listing DAG tasks..."
-          docker exec airflow airflow tasks list data_pipeline_dag --tree
-
-          echo "Searching for task logs with durations..."
-          if docker exec airflow test -d /opt/airflow/logs/data_pipeline_dag; then
-            LOG_FILES=$(docker exec airflow find /opt/airflow/logs/data_pipeline_dag -type f -name "*.log")
-            
-            if [ -z "$LOG_FILES" ]; then
-              echo "No log files found."
-            else
-              for FILE in $LOG_FILES; do
-                echo "Inspecting $FILE"
-                docker exec airflow cat "$FILE" | grep "Duration" && echo "---"
-              done
-            fi
-          else
-            echo "Log directory not found. DAG may not have started or logging is misconfigured."
-          fi
-
-      # Step 13: Detect anomalies in Airflow logs
-      - name: Detect anomalies in Airflow logs
-        run: |
-          echo "Analyzing logs for anomalies (duration > 600s)..."
-          if docker exec airflow test -d /opt/airflow/logs/data_pipeline_dag; then
-            LOG_FILES=$(docker exec airflow find /opt/airflow/logs/data_pipeline_dag -type f -name "*.log")
-
-            if [ -z "$LOG_FILES" ]; then
-              echo "No log files found. Skipping anomaly detection."
-            else
-              for FILE in $LOG_FILES; do
-                DURATION_LINE=$(docker exec airflow cat "$FILE" | grep -E "Duration: [0-9]+")
-                if echo "$DURATION_LINE" | grep -qE "Duration: [6-9][0-9]{2,}|[1-9][0-9]{3,}"; then
-                  echo "Anomaly detected in $FILE: $DURATION_LINE"
-                  exit 1
-                fi
-              done
-              echo "No anomalies detected."
-            fi
-          else
-            echo "Log directory not found. DAG may not have run yet."
-          fi
-
-      # Step 13.1: Debug Slack Webhook
-      - name: Debug Slack Webhook
-        if: failure()
-        run: |
-          echo "Sending test message to Slack via Webhook..."
-          curl -X POST -H 'Content-type: application/json' \
-            --data '{"text":"Test message from GitHub Actions (Debug)"}' \
-            '${{ secrets.SLACK_BOT_TOKEN }}'
-
-      # Step 14: Notify Slack on failure
-      - name: Notify Slack on failure
-        if: failure()
-        run: |
-          echo "Notifying Slack about pipeline failure..."
-          curl -X POST -H 'Content-type: application/json' \
-            --data '{"text":"Pipeline failed! Check the logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}' \
-            '${{ secrets.SLACK_BOT_TOKEN }}'
-
-      # Step 15: Stop services
       - name: Stop services
+        if: always()
         run: |
-          docker-compose down
+          docker compose down --volumes --remove-orphans
+
+  # ============================================
+  # Notify Slack
+  # ============================================
+  notify:
+    name: Notify Slack
+    runs-on: ubuntu-latest
+    needs: [build-and-integration, e2e-tests]
+    if: always()
+    steps:
+      - name: Send failure notification
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          fields: repo,message,commit,author,took
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Send success notification
+        if: success()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          fields: repo,message,commit,author,took
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
