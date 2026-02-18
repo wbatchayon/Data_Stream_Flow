@@ -1,6 +1,5 @@
 # ============================================
 # Data Stream Flow - Makefile
-# Production-Ready MLOps Commands
 # ============================================
 
 .PHONY: help dev-up dev-down prod-up prod-down build test lint security-scan clean logs reset health-check
