@@ -1,73 +1,179 @@
-# Data_Stream_Flow
-**Construction d'une pipeline robuste, automatisé et surveillé, allant de l’ingestion des données CSV à leur visualisation en temps réel, avec une gestion efficace des erreurs et des performances.**
+# Data Stream Flow
 
-##### Voici les étapes détaillées de réalisation du projet, structurées selon votre liste, en français et de manière concise:
+[![PyPI Version](https://img.shields.io/pypi/v/datastreamflow.svg)](https://pypi.org/project/datastreamflow/)
+[![Python Versions](https://img.shields.io/pypi/pyversions/datastreamflow.svg)](https://pypi.org/project/datastreamflow/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Code Style: Black](https://img.shields.io/badge/Code%20Style-Black-000000.svg)](https://github.com/psf/black)
+[![CI/CD](https://github.com/batchayw/Data_Stream_Flow/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/batchayw/Data_Stream_Flow/actions/workflows/ci-cd.yml)
+[![Security: Bandit](https://img.shields.io/badge/Security-Bandit-green.svg)](https://bandit.readthedocs.io/)
+[![Total Downloads](https://img.shields.io/github/downloads/batchayw/Data_Stream_Flow/total.svg)](https://github.com/batchayw/Data_Stream_Flow/releases)
+[![Contributors](https://img.shields.io/github/contributors/batchayw/Data_Stream_Flow.svg)](https://github.com/batchayw/Data_Stream_Flow/graphs/contributors)
+[![Last Commit](https://img.shields.io/github/last-commit/batchayw/Data_Stream_Flow/main.svg)](https://github.com/batchayw/Data_Stream_Flow/commits/main)
 
-***1. Remote CSV Data***
-- Configurez une tâche dans Apache Airflow pour importer des fichiers CSV depuis une source distante (via URL, API ou serveur distant).
+> **Enterprise-grade data pipeline with MLOps and DevSecOps best practices**
 
-***2. Traitement avec Pandas et Spark***
-- Utilisez Pandas pour nettoyer et transformer les données (suppression des doublons, gestion des valeurs manquantes, etc.).
-- Utilisez Spark pour un traitement distribué si le volume de données est important (ex: agrégation ou filtrage, etc.).
+**Data Stream Flow** is a robust, automated, and monitored data pipeline that orchestrates the complete lifecycle of data from ingestion to visualization.
 
-***3. Enregistrement du traitement dans un fichier CSV***
-- Enregistrez les données traitées par Pandas et Spark dans un fichier CSV local ou accessible pour les étapes suivantes.
+## Features
 
-***4. Utilisation de Spark Streaming pour lire le fichier CSV traité***
-- Configurez Spark Streaming 1 pour lire le fichier CSV en continu et le diffuser comme un flux de données.
+- 📥 **Data Ingestion** - CSV from remote sources with validation
+- 🔄 **Data Processing** - Pandas + Spark distributed processing
+- 📡 **Real-time Streaming** - Kafka + Spark Streaming
+- 💾 **Object Storage** - MinIO (S3-compatible)
+- 🔍 **Search & Analytics** - Elasticsearch + Kibana
+- ⚙️ **Orchestration** - Apache Airflow DAGs
+- 📊 **Monitoring** - Prometheus + Grafana
+- 🔒 **Security** - Trivy, Bandit, TruffleHog scanning
+- ✅ **Testing** - Unit, Integration, and E2E tests
 
-***5. Utilisation de ce fichier CSV par Python pour générer les données***
-- Créez un script Python (Python Data Generator) qui lit le fichier CSV et génère des données supplémentaires ou simulées (par exemple, en ajoutant des champs calculés).
+## Quick Start
 
-***6. Publication de ces données dans un topic Kafka***
-- Publiez les données générées par le script Python dans un topic Kafka spécifique via une tâche Airflow.
+### Installation
 
-***7. Configuration de Kafka pour recevoir les données générées et ZooKeeper pour gérer la coordination de Kaf***ka
-- Configurez un topic Kafka pour recevoir les données.
-- Assurez-vous que ZooKeeper est opérationnel pour gérer la coordination et la distribution des messages dans Kafka.
+```bash
+# From PyPI
+pip install datastreamflow
 
-***8. Utilisation de Spark Streaming pour consommer les données du topic Kafka***
-- Configurez Spark Streaming 2 pour consommer les données du topic Kafka en temps réel.
-
-***9. Stockage des données traitées dans MinIO (Configuration de MinIO pour recevoir les données de Spark Streaming 2)***
-- Configurez MinIO pour stocker les données issues de Spark Streaming 2.
-- Organisez les données dans MinIO (ex: par date ou type, sous forme de fichiers Parquet ou JSON).
-
-***10. Configuration ELK pour visualiser les données en temps réel (graphiques de tendances, cartes, ou métriques)***
-- Configurez Elasticsearch pour indexer les données depuis MinIO.
-- Connectez Kibana à Elasticsearch et créez des visualisations (graphiques de tendances, cartes, métriques).
-
-***11. Définition d’un DAG (Directed Acyclic Graph) qui orchestre toutes les étapes avec des dépendances entre les tâches***
-- Créez un DAG dans Airflow pour orchestrer les étapes 1 à 10.
-- Définissez les dépendances (ex: le traitement Pandas doit se terminer avant Spark Streaming).
-
-***12. Configuration des intervalles de planification (toutes les heures), avec ajout des mécanismes de gestion d’erreurs (réessais)***
-- Planifiez le DAG pour s’exécuter toutes les heures.
-- Ajoutez des mécanismes de gestion d’erreurs dans Airflow (ex: réessayer 3 fois en cas d’échec).
-
-***13. Test et Validation***
-- Testez chaque composant individuellement (Pandas, Spark, Kafka, MinIO, ELK).
-- Exécutez le DAG complet dans Airflow pour valider le pipeline de bout en bout.
-- Vérifiez que les données sont correctement visualisées dans Kibana.
-
-***14. Surveillez les performances du pipeline via les journaux d’Airflow, Kafka, et Spark***
-- Consultez les journaux d’Airflow, Kafka, et Spark pour surveiller les performances et détecter les goulots d’étranglement.
-
-***15. Configurez des alertes pour détecter les anomalies (via Airflow)***
-- Configurez des alertes dans Airflow pour signaler les échecs ou anomalies (envoi d’un e-mail ou notification Slack).
-
-
-#### Note
-Si vous vous tester API depuis la pipeline, ajouter ce job dans `ci-cd.yml`:
-```yaml
-# Step: Test the API endpoint
-      - name: Test API endpoint
-        run: |
-          # Wait for the API to be ready
-          sleep 10
-          # Send a POST request to the API
-          curl -X POST http://localhost:5000/trigger-pipeline
+# Or from source
+git clone https://github.com/batchayw/Data_Stream_Flow.git
+cd Data_Stream_Flow
+pip install -e ".[dev]"
 ```
 
-## Auteur 
-- William BATCHAYON (@batchayw)
+### Docker Deployment
+
+```bash
+# Clone and configure
+git clone https://github.com/batchayw/Data_Stream_Flow.git
+cd Data_Stream_Flow
+cp .env.example .env
+
+# Start services
+docker compose up -d
+
+# Access services
+# Airflow: http://localhost:8080 (admin/admin)
+# MinIO: http://localhost:9000 (minioadmin/minioadmin)
+# Kibana: http://localhost:5601
+# API: http://localhost:5000
+```
+
+## Architecture
+
+```
+┌──────────────┐     ┌──────────────┐     ┌─────────────────┐
+│  Remote CSV │────▶│   Airflow    │────▶│  Pandas/Spark   │
+│  Data Source│     │  Orchestrator│     │  Processing     │
+└──────────────┘     └──────────────┘     └─────────────────┘
+                                                     │
+                                                     ▼
+┌──────────────┐     ┌──────────────┐     ┌─────────────────┐
+│ Elasticsearch│◀────│    MinIO     │◀────│  Kafka Topic    │
+│  + Kibana    │     │  Data Lake   │     │  Streaming      │
+└──────────────┘     └──────────────┘     └─────────────────┘
+```
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Security](docs/SECURITY.md)
+- [Deployment](docs/DEPLOYMENT.md)
+- [Contributing](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
+
+## Development
+
+### Prerequisites
+
+- Python 3.8+
+- Docker and Docker Compose
+- Git
+
+### Local Development
+
+```bash
+# Clone repository
+git clone https://github.com/batchayw/Data_Stream_Flow.git
+cd Data_Stream_Flow
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+# or: venv\Scripts\activate  # Windows
+
+# Install dependencies
+pip install -r requirements.txt
+pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Start services
+make dev-up
+```
+
+### Available Commands
+
+```bash
+make dev-up        # Start development environment
+make dev-down      # Stop development environment
+make test          # Run all tests
+make lint          # Run code linting
+make security-scan # Run security scans
+make logs          # View logs
+make clean         # Clean up
+```
+
+## CI/CD Pipeline
+
+The pipeline includes:
+
+1. **Lint** - Code quality checks (Flake8, Black, isort, Bandit)
+2. **Security** - Vulnerability scanning (Trivy, TruffleHog, Safety)
+3. **Unit Tests** - Core functionality tests
+4. **Integration** - Docker build and integration tests
+5. **E2E** - End-to-end pipeline tests
+6. **Notify** - Slack notifications
+
+## Technologies
+
+| Category | Technologies |
+|----------|-------------|
+| Orchestration | Apache Airflow |
+| Processing | Pandas, Apache Spark |
+| Streaming | Apache Kafka, Spark Streaming |
+| Storage | MinIO, Elasticsearch |
+| Monitoring | Prometheus, Grafana |
+| Security | Trivy, Bandit, TruffleHog |
+| Testing | Pytest, unittest |
+
+## Contributing
+
+Contributions are welcome! Please see our [Contributing Guide](CONTRIBUTING.md).
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Author
+
+**William BATCHAYON**
+- GitHub: [@batchayw](https://github.com/batchayw)
+- Email: batchayw@protonmail.com
+
+## Support
+
+- 📖 [Documentation](docs/)
+- 🐛 [Issue Tracker](https://github.com/batchayw/Data_Stream_Flow/issues)
+- 💬 [Discussions](https://github.com/batchayw/Data_Stream_Flow/discussions)
+
+---
+
+<p align="center">
+  Made with ❤️ by <a href="https://github.com/batchayw">William BATCHAYON</a>
+</p>
