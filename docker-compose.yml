@@ -14,7 +14,7 @@ services:
     container_name: ${COMPOSE_PROJECT_NAME:-datastreamflow}_airflow
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: service_started
     environment:
       # Airflow core settings
       - AIRFLOW__CORE__EXECUTOR=${AIRFLOW__CORE__EXECUTOR}
@@ -103,6 +103,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 10s
     restart: unless-stopped
     networks:
       - datastreamflow
