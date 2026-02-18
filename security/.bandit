@@ -1,0 +1,34 @@
+# ============================================
+# Bandit Security Scanner Configuration
+# ============================================
+
+[bandit]
+exclude_dirs = 
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    .pytest_cache,
+    .tox,
+    build,
+    dist,
+    *.egg-info
+skips = 
+    B101,  # assert_used - disable in tests
+    B413,  # blacklisted crypto (for dev only)
+    B112,  # try_except_pass
+    B603,  # subprocess_without_check
+    B404,  # import_subprocess
+    B603,  # subprocess_popen_with_shell_equals_true
+    B701,  # jinja2_autoescape_false
+
+# Confidence levels to check
+confidence_level = LOW
+
+# Severity levels to check  
+severity_level = LOW
+
+# Test targets
+targets = 
+    src/,
+    tests/

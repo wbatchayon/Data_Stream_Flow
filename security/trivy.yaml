@@ -1,0 +1,40 @@
+# ============================================
+# Trivy Vulnerability Scanner Configuration
+# ============================================
+
+format: table
+exit-code: 0
+severity:
+  - UNKNOWN
+  - LOW
+  - MEDIUM
+  - HIGH
+  - CRITICAL
+
+vuln-type:
+  - os
+  - library
+
+scan:
+  security-checks:
+    - vuln
+    - config
+    - secret
+
+ignorefile: .trivyignore
+
+ignore-unfixed: false
+
+timeout: 10m
+
+cache:
+  backend: fs
+  ttl: 24h
+
+db:
+  repository: ghcr.io/aquasecurity/trivy-db:2
+  skip-update: false
+
+docker:
+  snapshotMode: "full"
+  scannerAlways: true

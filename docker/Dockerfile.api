@@ -1,0 +1,60 @@
+# ============================================
+# Data Stream Flow - API Dockerfile
+# ============================================
+
+FROM python:3.11-slim-bookworm
+
+# ============================================
+# Labels
+# ============================================
+LABEL maintainer="William BATCHAYON <batchayw@protonmail.com>" \
+      description="Data Stream Flow API - Pipeline Trigger" \
+      version="1.0.0"
+
+# ============================================
+# Security: Non-root user
+# ============================================
+RUN groupadd --gid 1000 appgroup && \
+    useradd --uid 1000 --gid appgroup --shell /bin/bash --create-home appuser
+
+# ============================================
+# Environment Setup
+# ============================================
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_ENV=/tmp/pip_env
+
+# ============================================
+# Working Directory
+# ============================================
+WORKDIR /app
+
+# ============================================
+# Install dependencies
+# ============================================
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# ============================================
+# Security: Switch to non-root user
+# ============================================
+RUN rm -rf /tmp/pip_env
+USER appuser
+
+# ============================================
+# Health Check
+# ============================================
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:5000/health || exit 1
+
+# ============================================
+# Expose port
+# ============================================
+EXPOSE 5000
+
+# ============================================
+# Run application
+# ============================================
+CMD ["python", "api.py"]

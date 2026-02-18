@@ -1,0 +1,26 @@
+# ============================================
+# Grafana Datasources Configuration
+# ============================================
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    jsonData:
+      timeInterval: "15s"
+      
+  - name: Elasticsearch
+    type: elasticsearch
+    access: proxy
+    url: http://elasticsearch:9200
+    database: data_index
+    jsonData:
+      timeField: "@timestamp"
+      esVersion: 8
+      logMessageField: message
+      logLevelField: level
