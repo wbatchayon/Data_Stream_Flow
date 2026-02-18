@@ -1,8 +1,52 @@
-apache-airflow
-pandas
-pyspark
-kafka-python
-minio
-elasticsearch
-requests
-flask
+# ============================================
+# Data Stream Flow - Python Dependencies
+# Production-Ready with Security Pinned Versions
+# ============================================
+
+# Core Airflow and dependencies
+apache-airflow==2.8.1
+# psycopg2-binary required for PostgreSQL connection
+psycopg2-binary==2.9.9
+
+# Data Processing
+pandas==2.1.4
+pyspark==3.5.0
+
+# Kafka
+kafka-python-ng==2.2.2
+
+# Object Storage (MinIO)
+minio==7.2.0
+
+# Elasticsearch
+elasticsearch==8.11.1
+
+# HTTP and API
+requests==2.31.0
+urllib3==2.1.0
+flask==3.0.0
+werkzeug==3.0.1
+
+# Testing
+pytest==7.4.4
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+
+# Security
+bandit==1.7.6
+safety==3.0.1
+
+# Code Quality
+flake8==7.0.0
+black==23.12.1
+isort==5.13.2
+
+# Monitoring
+prometheus-client==0.19.0
+
+# Logging
+python-json-logger==2.0.7
+
+# Utilities
+python-dotenv==1.0.0
+pyyaml==6.0.1
