@@ -58,21 +58,6 @@ docker compose up -d
 # API: http://localhost:5000
 ```
 
-## Architecture
-
-```
-┌──────────────┐     ┌──────────────┐     ┌─────────────────┐
-│  Remote CSV │────▶│   Airflow    │────▶│  Pandas/Spark   │
-│  Data Source│     │  Orchestrator│     │  Processing     │
-└──────────────┘     └──────────────┘     └─────────────────┘
-                                                     │
-                                                     ▼
-┌──────────────┐     ┌──────────────┐     ┌─────────────────┐
-│ Elasticsearch│◀────│    MinIO     │◀────│  Kafka Topic    │
-│  + Kibana    │     │  Data Lake   │     │  Streaming      │
-└──────────────┘     └──────────────┘     └─────────────────┘
-```
-
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
